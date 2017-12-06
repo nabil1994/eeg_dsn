@@ -1,0 +1,67 @@
+function nn = nnffpso(nn, x, y, pop)
+    n = nn.n;
+    m = size(x, 1);
+    [a,b] = size(nn.W{1});
+%     [c,d] = size(nn.W{2});
+    for i = 1:a
+        nn.W{1}(i,:) = pop(:,(i-1)*b+1:i*b);
+    end   
+%     for i = 1:c
+%         nn.W{2}(i,:) = pop(:,(i-1)*d+a*b+1:i*d+a*b);
+%     end 
+    nn.a{1} = x; 
+    %feedforward pass
+    for i = 2 : n-1
+        nn.a{i-1} = [ones(size(nn.a{i-1},1),1) nn.a{i-1}];
+        switch nn.activation_function 
+            case 'sigm'
+                % Calculate the unit's outputs (including the bias term)
+                nn.a{i} = sigm(nn.a{i - 1} * nn.W{i - 1}');
+            case 'tanh_opt'
+                nn.a{i} = tanh_opt(nn.a{i - 1} * nn.W{i - 1}');
+        end
+        
+        %calculate running exponential activations for use with sparsity
+        if(nn.nonSparsityPenalty>0)
+
+            nn.p{i} = 0.99 * nn.p{i} + 0.01 * mean(nn.a{i}, 1);
+        end
+        
+        %Add the bias term
+        %nn.a{i} = [nn.a{i}];
+    end
+   
+%     %update U
+%     nn.a{n-1} = [ones(size(nn.a{n-1},1),1) nn.a{n-1}];
+%     A = nn.a{n-1}' * nn.a{n-1};
+%     I =  eye(size(A,1));
+% %     D = inv(A+opts.lamda*I);
+%      D = pinv(A+opts.lamda*I);
+% %    B = (A+opts.lamda*I) \ nn.a{n-1}';
+%      B = D * nn.a{n-1}';
+%     C = B * y;
+%     nn.W{n - 1} = C;
+%     nn.W{n - 1} = nn.W{n-1}'; 
+%   
+nn.a{n-1} = [ones(size(nn.a{n-1},1),1) nn.a{n-1}];
+    switch nn.output 
+        case 'sigm'
+            nn.a{n} = nn.a{n - 1} * nn.W{n - 1}';
+        case 'linear'
+            nn.a{n} = nn.a{n - 1} * nn.W{n - 1}';
+        case 'softmax'
+            nn.a{n} = nn.a{n - 1} * nn.W{n - 1}';
+            nn.a{n} = exp(bsxfun(@minus, nn.a{n}, max(nn.a{n},[],2)));
+            nn.a{n} = bsxfun(@rdivide, nn.a{n}, sum(nn.a{n}, 2)); 
+    end  
+    %error and loss
+    nn.e = y - nn.a{n};
+    
+    switch nn.output
+        case {'sigm', 'linear'}
+            nn.L = 1/2 * sum(sum(nn.e .^ 2)) / m; 
+        case 'softmax'
+            nn.L = -sum(sum(y .* log(nn.a{n}))) / m;
+    end
+end
+    
