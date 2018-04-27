@@ -26,44 +26,68 @@ function nn = updateUW(nn, x, y, opts)
         end
     end
    
-%update W
-%     x = [ones(m,1) x];
-%    H = nn.a{n-1}/(nn.a{n-1}'*nn.a{n-1});
-    H = nn.a{n-1}*pinv(nn.a{n-1}'*nn.a{n-1});
-    E = 2 * [ones(m,1) x]';
-    G = (nn.a{n-1}.*(1-nn.a{n-1}')');
-    J = (H*(nn.a{n-1}'*y)*(y'*H) - y*(y'*H));
-    F = G.*J;
-    T = E * F;
-    nn.dW{1} = T';
-    for i = 1 : (nn.n - 2)
-        nn.dW{i} = alpha * nn.dW{i};
-        if(momentum>0)
-            nn.vW{i} = momentum*nn.vW{i} + nn.dW{i};
-        end
+%% update W   batch-mode gradient descent
+epsilon = 1.0e-6;
+% Store the number of decision variables
+x0 = [-1; 0.2; 0.1; 2; 1; 2; 3];
+nDecVar = length(x0);
+nIter = length(x);
+idxSG = nn.a{n-1};
+% Allocate output
+xMat = zeros(nDecVar, nIter + 1);
 
-        nn.W{i} = nn.W{i} - nn.vW{i};
-    end   
+% Set the initial guess
+xMat(:, 1) = x0;
+
+% Repeat `idxSG` if it has fewer columns than `nIter`
+if size(idxSG, 2) < nIter
+    idxSG = repmat(idxSG, 1, ceil(nIter/size(idxSG, 2)));
+    idxSG(:, nIter + 1 : 1 : end) = [];
+end
+
+% Initialise accumulator variables
+accG = zeros(nDecVar, 1); % accumulated gradients
+accD = zeros(nDecVar, 1); % accumulated updates (deltas)
+
+% Run optimisation
+for i = 1 : 1 : nIter
+    % Get gradients w.r.t. stochastic objective at the current iteration
+    sgCurr = StochGrad(idxSG(:, i), xMat(:, i));
+    
+    % Update accumulated gradients
+    accG = 0.95.*accG + (1 - 0.95).*(sgCurr.^2);
+    
+    % Compute update
+    dCurr = -(sqrt(accD + epsilon)./sqrt(accG + epsilon)).*sgCurr;
+    
+    % Update accumulated updates (deltas)
+    accD = 0.95.*accD + (1 - 0.95).*(dCurr.^2);
+    
+    % Update decision variables
+    xMat(:, i + 1) = xMat(:, i) + dCurr;
+    nn.dW{i} = xMat(:, i + 1);
+end
     
  nn.a{1} = x;
  for i = 2 : n-1
         nn.a{i-1} = [ones(size(nn.a{i-1},1),1) nn.a{i-1}];
         switch nn.activation_function 
             case 'sigm'
-                % Calculate the unit's outputs (including the bias term)
+                %Calculate the unit's outputs (including the bias term)
                 nn.a{i} = sigm(nn.a{i - 1} * nn.W{i - 1}');
             case 'tanh_opt'
                 nn.a{i} = tanh_opt(nn.a{i - 1} * nn.W{i - 1}');
         end
         
-        %calculate running exponential activations for use with sparsity
+        % calculate running exponential activations for use with sparsity
         if(nn.nonSparsityPenalty>0)
 
             nn.p{i} = 0.99 * nn.p{i} + 0.01 * mean(nn.a{i}, 1);
         end
  end
+ 
 
-%     %update U
+%%     %update U
 %      nn.a{n-1} = [ones(size(nn.a{n-1},1),1) nn.a{n-1}];
 %     A = nn.a{n-1}' * nn.a{n-1};
 %     I =  eye(size(A,1));
